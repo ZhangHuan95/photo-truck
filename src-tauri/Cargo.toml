@@ -1,0 +1,46 @@
+[package]
+name = "photo-truck"
+version = "1.0.0"
+description = "照片传输归类到NAS的桌面应用 - 支持RAW格式、智能分类、去重功能"
+authors = ["Photo Truck Team"]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/phototruck/photo-truck"
+keywords = ["photo", "nas", "transfer", "exif", "raw"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "photo_truck_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.0", features = [] }
+
+[dependencies]
+tauri = { version = "2.0", features = [] }
+tauri-plugin-opener = "2.0"
+tauri-plugin-dialog = "2.0"
+tauri-plugin-fs = "2.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# 文件系统操作
+walkdir = "2.5"
+
+# 文件哈希计算
+sha2 = "0.10"
+hex = "0.4"
+
+# 日期时间处理
+chrono = { version = "0.4", features = ["serde"] }
+
+# 异步运行时
+tokio = { version = "1", features = ["full"] }
+
+# 正则表达式
+regex = "1"
+
+[dev-dependencies]
+tempfile = "3"
+
