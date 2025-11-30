@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.1.0-blue.svg" alt="Version">
+  <a href="https://github.com/ZhangHuan95/photo-truck/releases"><img src="https://img.shields.io/badge/version-1.1.0-blue.svg" alt="Version"></a>
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg" alt="Platform">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License">
   <img src="https://img.shields.io/badge/rust-1.70+-orange.svg" alt="Rust">
@@ -32,6 +32,10 @@ Photo Truck 是一款专为摄影师和照片管理爱好者设计的桌面工�
 | 🔄 **去重功能** | 使用 SHA-256 哈希检测重复文件 |
 | 📊 **进度监控** | 实时显示传输进度和统计信息 |
 | 🎯 **灵活模板** | 支持多种分类模板，可自定义 |
+| 🖼️ **缩略图预览** | 传输前预览照片缩略图 |
+| ⏹️ **传输取消** | 随时中断传输操作 |
+| 📜 **历史记录** | 查看历史传输记录 |
+| 💻 **命令行模式** | 支持 CLI 无界面批量传输 |
 | 🌐 **跨平台** | 支持 macOS、Windows、Linux |
 
 ### 支持的照片格式
@@ -193,102 +197,39 @@ graph LR
 
 ## 🔧 高级配置
 
-### 命令行选项（开发中）
+### 命令行模式
+
+Photo Truck 支持命令行模式，可在无图形界面的环境下使用：
 
 ```bash
-# 未来版本将支持命令行模式
-photo-truck --source /path/to/photos --target /path/to/nas --template "{year}/{month}"
+# 基本用法
+photo-truck -s /Volumes/SD/DCIM -t /Volumes/NAS/Photos
+
+# 使用自定义模板
+photo-truck -s ~/Pictures -t ~/Backup -p "{year}/{month}-{day}"
+
+# 预览模式（不传输）
+photo-truck -s ~/Pictures -t ~/Backup --dry-run
+
+# 查看帮助
+photo-truck --help
 ```
 
-### 配置文件
+| 选项 | 说明 |
+|------|------|
+| `-s, --source <路径>` | 源文件夹路径 |
+| `-t, --target <路径>` | 目标文件夹路径 |
+| `-p, --template <模板>` | 分类模板 |
+| `--no-skip-duplicates` | 不跳过重复文件 |
+| `-n, --dry-run` | 预览模式 |
+| `-h, --help` | 显示帮助 |
+| `-v, --version` | 显示版本 |
 
-应用配置存储在以下位置：
-- **macOS**: `~/Library/Application Support/photo-truck/config.json`
-- **Windows**: `%APPDATA%/photo-truck/config.json`
-- **Linux**: `~/.config/photo-truck/config.json`
+### 配置文件位置
 
-## 🧪 开发指南
-
-### 环境准备
-
-```bash
-# 克隆项目
-git clone https://github.com/yourusername/photo-truck.git
-cd photo-truck
-
-# 安装 Node.js 依赖
-npm install
-
-# 安装 Rust (如果未安装)
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-# 安装 ExifTool
-brew install exiftool  # macOS
-```
-
-### 开发运行
-
-```bash
-# 启动开发服务器
-npm run tauri dev
-```
-
-### 构建生产版本
-
-```bash
-# 构建所有平台
-npm run tauri build
-
-# 输出位置
-# macOS: src-tauri/target/release/bundle/dmg/
-# Windows: src-tauri/target/release/bundle/msi/
-# Linux: src-tauri/target/release/bundle/appimage/
-```
-
-### 运行测试
-
-```bash
-cd src-tauri
-cargo test
-```
-
-### 测试统计
-
-| 模块 | 测试数量 | 描述 |
-|------|----------|------|
-| classify.rs | 24 | 日期解析、文件夹命名、分类模板、扩展名支持 |
-| hash.rs | 17 | SHA-256 哈希、快速哈希、去重器 |
-| exif.rs | 10 | EXIF 元数据、ExifTool 检查 |
-| transfer.rs | 28 | 文件扫描、进度追踪、大小格式化 |
-| 集成测试 | 16 | 端到端工作流、序列化、并发安全 |
-| **总计** | **95** | 全部通过 ✅ |
-
-## 📁 项目结构
-
-```
-photo-truck/
-├── src/                          # Vue 前端代码
-│   ├── App.vue                   # 主应用组件
-│   ├── main.ts                   # 应用入口
-│   └── styles.css                # 样式文件
-├── src-tauri/                    # Rust 后端代码
-│   ├── src/
-│   │   ├── lib.rs               # 库入口，模块注册
-│   │   ├── main.rs              # 应用入口
-│   │   ├── classify.rs          # 分类逻辑和模板处理
-│   │   ├── commands.rs          # Tauri 命令处理器
-│   │   ├── exif.rs              # ExifTool 集成
-│   │   ├── hash.rs              # SHA-256 哈希和去重
-│   │   └── transfer.rs          # 文件传输逻辑
-│   ├── tests/
-│   │   └── integration_test.rs  # 集成测试
-│   ├── Cargo.toml               # Rust 依赖配置
-│   └── tauri.conf.json          # Tauri 应用配置
-├── public/                       # 静态资源
-├── docs/                         # 文档资源
-├── package.json                  # Node.js 依赖配置
-└── README.md                     # 项目说明文档
-```
+- **macOS**: `~/Library/Application Support/photo-truck/`
+- **Windows**: `%APPDATA%/photo-truck/`
+- **Linux**: `~/.config/photo-truck/`
 
 ## ❓ 常见问题
 
@@ -336,59 +277,9 @@ A: 传输过程中可以点击"取消传输"按钮中断操作，已传输的文
 A: Photo Truck 执行的是**复制**操作，原始文件不会被删除。这确保了数据安全。
 </details>
 
-## 🗺️ 路线图
-
-- [x] 基本照片扫描和传输
-- [x] EXIF 日期读取
-- [x] 多种分类模板
-- [x] 文件去重
-- [x] 进度显示
-- [x] 传输取消功能
-- [x] 自定义模板编辑器
-- [x] 传输历史记录
-- [x] 缩略图预览
-- [x] 命令行模式
-- [x] 批量重命名
-
-## 🖥️ 命令行模式
-
-Photo Truck 支持命令行模式，可在无图形界面的环境下使用：
-
-```bash
-# 基本用法
-photo-truck -s /Volumes/SD/DCIM -t /Volumes/NAS/Photos
-
-# 使用自定义模板
-photo-truck -s ~/Pictures -t ~/Backup -p "{year}/{month}-{day}"
-
-# 预览模式（不传输）
-photo-truck -s ~/Pictures -t ~/Backup --dry-run
-
-# 查看帮助
-photo-truck --help
-```
-
-### 命令行选项
-
-| 选项 | 说明 |
-|------|------|
-| `-s, --source <路径>` | 源文件夹路径 |
-| `-t, --target <路径>` | 目标文件夹路径 |
-| `-p, --template <模板>` | 分类模板 |
-| `--no-skip-duplicates` | 不跳过重复文件 |
-| `-n, --dry-run` | 预览模式 |
-| `-h, --help` | 显示帮助 |
-| `-v, --version` | 显示版本 |
-
 ## 🤝 贡献
 
-欢迎提交 Issue 和 Pull Request！
-
-1. Fork 本仓库
-2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 开启 Pull Request
+欢迎提交 Issue 和 Pull Request！详细的开发指南请参阅 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 📄 许可证
 
