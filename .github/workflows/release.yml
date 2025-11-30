@@ -1,0 +1,147 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# 默认最小权限（read）。需要写权限时再在作业级别打开。
+permissions:
+  contents: read
+
+jobs:
+  # 创建 draft release，同时检测触发者是否为仓库内可写/管理员 (trusted)
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create-release.outputs.release_id }}
+      trusted: ${{ steps.create-release.outputs.trusted }}
+    permissions:
+      contents: write   # 仅此作业需要写 release 的权限
+    steps:
+      - name: Create draft release and check actor permission
+        id: create-release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const core = require('@actions/core');
+            const actor = context.actor;
+            // 查询触发者在仓库中的权限
+            const perm = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: actor
+            });
+            const p = perm.data.permission || '';
+            const trusted = (p === 'admin' || p === 'write' || p === 'maintain');
+            // 创建 draft release（一直创建为 draft）
+            const release = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: context.ref_name,
+              name: `Photo Truck ${context.ref_name}`,
+              body: `## Photo Truck ${context.ref_name}\n\n### 📥 下载\n\n请根据您的操作系统选择对应的安装包：\n\n- **macOS**: 下载 \`.dmg\` 文件\n- **Windows**: 下载 \`.msi\` 或 \`.exe\` 文件\n- **Linux**: 下载 \`.deb\` 或 \`.AppImage\` 文件\n\n### ⚠️ 前置要求\n\n运行 Photo Truck 需要安装 [ExifTool](https://exiftool.org/):\n\n- macOS: \`brew install exiftool\`\n- Windows: 从官网下载安装\n- Linux: \`sudo apt install libimage-exiftool-perl\``,
+              draft: true,
+              prerelease: false
+            });
+            core.setOutput('release_id', String(release.data.id));
+            core.setOutput('trusted', String(trusted));
+            core.info(`Actor ${actor} permission: ${p}, trusted: ${trusted}`);
+  # 构建（matrix 多平台），对任意触发者都会运行
+  build-tauri:
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-latest'
+            args: '--target aarch64-apple-darwin'
+          - platform: 'macos-latest'
+            args: '--target x86_64-apple-darwin'
+          - platform: 'ubuntu-22.04'
+            args: ''
+          - platform: 'windows-latest'
+            args: ''
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false   # 防止将 GITHUB_TOKEN 写入 git config
+      - name: Install dependencies (Ubuntu only)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+      - name: Install Rust stable
+        uses: dtolnay/rust-action@stable
+      - name: Add Rust target (macOS)
+        if: matrix.platform == 'macos-latest'
+        run: |
+          if [[ "${{ matrix.args }}" == *"aarch64"* ]]; then
+            rustup target add aarch64-apple-darwin
+          else
+            rustup target add x86_64-apple-darwin
+          fi
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Build the app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # 仅用于构建流程中需要的 API 请求（尽量不要用它推送）
+        with:
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          args: ${{ matrix.args }}
+
+  # 自动发布：当触发者被认为是 trusted（repo 内写权限的人）时自动把 draft->published
+  publish-auto:
+    needs: [create-release, build-tauri]
+    if: ${{ needs.create-release.outputs.trusted == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish release automatically (trusted actor)
+        uses: actions/github-script@v7
+        env:
+          RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
+        with:
+          script: |
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: parseInt(process.env.RELEASE_ID, 10),
+              draft: false
+            });
+
+  # 手动发布：当触发者不可信时（trusted == false）需要环境审批（environment: publish）
+  publish-manual:
+    needs: [create-release, build-tauri]
+    if: ${{ needs.create-release.outputs.trusted == 'false' }}
+    runs-on: ubuntu-latest
+    environment: publish   # 需要在仓库 Settings -> Environments 创建 publish 并配置 reviewers
+    permissions:
+      contents: write
+    steps:
+      - name: Publish release after manual approval
+        # 使用一个受限的 PAT（在仓库 Secrets 中配置为 PUBLISH_PAT）
+        env:
+          RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
+          GITHUB_TOKEN: ${{ secrets.PUBLISH_PAT }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: parseInt(process.env.RELEASE_ID, 10),
+              draft: false
+            });
