@@ -34,12 +34,31 @@ jobs:
             const p = perm.data.permission || '';
             const trusted = (p === 'admin' || p === 'write' || p === 'maintain');
             // 创建 draft release（一直创建为 draft）
+            const releaseBody = [
+              '## Photo Truck ' + context.ref_name,
+              '',
+              '### 📥 下载',
+              '',
+              '请根据您的操作系统选择对应的安装包：',
+              '',
+              '- **macOS**: 下载 `.dmg` 文件',
+              '- **Windows**: 下载 `.msi` 或 `.exe` 文件',
+              '- **Linux**: 下载 `.deb` 或 `.AppImage` 文件',
+              '',
+              '### ⚠️ 前置要求',
+              '',
+              '运行 Photo Truck 需要安装 [ExifTool](https://exiftool.org/):',
+              '',
+              '- macOS: `brew install exiftool`',
+              '- Windows: 从官网下载安装',
+              '- Linux: `sudo apt install libimage-exiftool-perl`'
+            ].join('\n');
             const release = await github.rest.repos.createRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
               tag_name: context.ref_name,
-              name: `Photo Truck ${context.ref_name}`,
-              body: `## Photo Truck ${context.ref_name}\n\n### 📥 下载\n\n请根据您的操作系统选择对应的安装包：\n\n- **macOS**: 下载 \\.dmg\\` 文件\n- **Windows**: 下载 \\.msi\\ 或 \\.exe\\ 文件\n- **Linux**: 下载 \\.deb\\ 或 \\.AppImage\\ 文件\n\n### ⚠️ 前置要求\n\n运行 Photo Truck 需要安装 [ExifTool](https://exiftool.org/):\n\n- macOS: \`brew install exiftool\`\n- Windows: 从官网下载安装\n- Linux: \`sudo apt install libimage-exiftool-perl\``,
+              name: 'Photo Truck ' + context.ref_name,
+              body: releaseBody,
               draft: true,
               prerelease: false
             });
