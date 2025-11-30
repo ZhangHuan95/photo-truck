@@ -15,7 +15,7 @@ pub struct PhotoMetadata {
 
 /// 获取 ExifTool 的可执行路径
 /// macOS 应用打包后无法直接访问 PATH 中的命令，需要尝试多个可能的路径
-fn get_exiftool_path() -> Option<String> {
+pub fn get_exiftool_path() -> Option<String> {
     // 常见的 ExifTool 安装路径
     let possible_paths = [
         "exiftool",                           // 系统 PATH

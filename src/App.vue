@@ -16,6 +16,11 @@ interface TemplateInfo {
   template: string;
 }
 
+interface RenameTemplateInfo {
+  name: string;
+  template: string;
+}
+
 interface PhotoInfo {
   path: string;
   file_name: string;
@@ -56,11 +61,42 @@ interface TransferResult {
   errors: string[];
 }
 
+interface TransferRecord {
+  id: string;
+  timestamp: string;
+  source_dir: string;
+  target_dir: string;
+  template: string;
+  total_files: number;
+  success_count: number;
+  skip_count: number;
+  error_count: number;
+  total_size: number;
+  duration_secs: number;
+}
+
+interface ThumbnailInfo {
+  file_path: string;
+  data: string;
+  width: number;
+  height: number;
+  format: string;
+}
+
+interface TemplateValidation {
+  valid: boolean;
+  example: string;
+  warnings: string[];
+  supported_vars: string[];
+}
+
 // 响应式状态
 const envInfo = ref<EnvironmentInfo | null>(null);
 const templates = ref<TemplateInfo[]>([]);
+const renameTemplates = ref<RenameTemplateInfo[]>([]);
 const selectedTemplate = ref("");
 const customTemplate = ref("{year}/{month}");
+const customTemplateValidation = ref<TemplateValidation | null>(null);
 const fallbackFolder = ref("未知日期");
 const sourceDir = ref("");
 const targetDir = ref("");
@@ -74,12 +110,35 @@ const transferResult = ref<TransferResult | null>(null);
 const errorMessage = ref("");
 const activeTab = ref("config");
 
+// 重命名配置
+const renameEnabled = ref(false);
+const selectedRenameTemplate = ref("{original}");
+const customRenameTemplate = ref("{date}_{original}");
+const renameCounterStart = ref(1);
+const renameCounterDigits = ref(4);
+
+// 历史记录
+const transferHistory = ref<TransferRecord[]>([]);
+const showHistory = ref(false);
+
+// 缩略图
+const thumbnails = ref<ThumbnailInfo[]>([]);
+const showThumbnails = ref(false);
+const loadingThumbnails = ref(false);
+
 // 计算属性
 const currentTemplate = computed(() => {
   if (selectedTemplate.value === "custom") {
     return customTemplate.value;
   }
   return selectedTemplate.value || "{year}/{month}";
+});
+
+const currentRenameTemplate = computed(() => {
+  if (selectedRenameTemplate.value === "custom") {
+    return customRenameTemplate.value;
+  }
+  return selectedRenameTemplate.value || "{original}";
 });
 
 const totalSizeFormatted = computed(() => {
@@ -94,10 +153,16 @@ const progressPercent = computed(() => {
   );
 });
 
+const canCancel = computed(() => {
+  return isTransferring.value && 
+    transferProgress.value?.status === "transferring";
+});
+
 // 生命周期
 onMounted(async () => {
   await checkEnvironment();
   await loadTemplates();
+  await loadRenameTemplates();
   setupEventListeners();
 });
 
@@ -121,6 +186,14 @@ async function loadTemplates() {
   }
 }
 
+async function loadRenameTemplates() {
+  try {
+    renameTemplates.value = await invoke<RenameTemplateInfo[]>("get_rename_templates");
+  } catch (e) {
+    console.error("加载重命名模板失败:", e);
+  }
+}
+
 function setupEventListeners() {
   listen<TransferProgress>("transfer-progress", (event) => {
     transferProgress.value = event.payload;
@@ -137,6 +210,7 @@ async function selectSourceDir() {
     sourceDir.value = selected as string;
     scanResult.value = null;
     classificationPreview.value = [];
+    thumbnails.value = [];
   }
 }
 
@@ -157,8 +231,29 @@ async function updateConfig() {
       template: currentTemplate.value,
       fallbackFolder: fallbackFolder.value,
     });
+    await invoke("set_rename_config", {
+      enabled: renameEnabled.value,
+      template: currentRenameTemplate.value,
+      counterStart: renameCounterStart.value,
+      counterDigits: renameCounterDigits.value,
+    });
   } catch (e) {
     errorMessage.value = "配置更新失败: " + e;
+  }
+}
+
+async function validateTemplate() {
+  if (selectedTemplate.value !== "custom") {
+    customTemplateValidation.value = null;
+    return;
+  }
+  try {
+    customTemplateValidation.value = await invoke<TemplateValidation>(
+      "validate_custom_template",
+      { template: customTemplate.value }
+    );
+  } catch (e) {
+    console.error("模板验证失败:", e);
   }
 }
 
@@ -171,6 +266,7 @@ async function scanPhotos() {
   isScanning.value = true;
   errorMessage.value = "";
   scanResult.value = null;
+  thumbnails.value = [];
 
   try {
     await updateConfig();
@@ -207,14 +303,68 @@ async function startTransfer() {
   activeTab.value = "transfer";
 
   try {
+    await updateConfig();
     transferResult.value = await invoke<TransferResult>("start_transfer", {
       targetDir: targetDir.value,
       skipDuplicates: skipDuplicates.value,
     });
+    // 传输完成后刷新历史记录
+    await loadHistory();
   } catch (e) {
     errorMessage.value = "传输失败: " + e;
   } finally {
     isTransferring.value = false;
+  }
+}
+
+async function cancelTransfer() {
+  try {
+    await invoke("cancel_transfer");
+  } catch (e) {
+    console.error("取消传输失败:", e);
+  }
+}
+
+async function loadHistory() {
+  try {
+    transferHistory.value = await invoke<TransferRecord[]>("get_transfer_history");
+  } catch (e) {
+    console.error("加载历史记录失败:", e);
+  }
+}
+
+async function clearHistory() {
+  if (!confirm("确定要清空所有历史记录吗？")) return;
+  try {
+    await invoke("clear_transfer_history");
+    transferHistory.value = [];
+  } catch (e) {
+    errorMessage.value = "清空历史失败: " + e;
+  }
+}
+
+async function deleteHistoryRecord(id: string) {
+  try {
+    await invoke("delete_history_record", { id });
+    transferHistory.value = transferHistory.value.filter(r => r.id !== id);
+  } catch (e) {
+    errorMessage.value = "删除记录失败: " + e;
+  }
+}
+
+async function loadThumbnails() {
+  if (!scanResult.value || loadingThumbnails.value) return;
+  
+  loadingThumbnails.value = true;
+  try {
+    thumbnails.value = await invoke<ThumbnailInfo[]>("get_thumbnails", {
+      maxCount: 20,
+    });
+    showThumbnails.value = true;
+  } catch (e) {
+    console.error("加载缩略图失败:", e);
+  } finally {
+    loadingThumbnails.value = false;
   }
 }
 
@@ -233,11 +383,22 @@ function formatSize(bytes: number): string {
   return bytes + " B";
 }
 
+function formatDuration(secs: number): string {
+  if (secs < 60) return `${secs}秒`;
+  const mins = Math.floor(secs / 60);
+  const remainingSecs = secs % 60;
+  if (mins < 60) return `${mins}分${remainingSecs}秒`;
+  const hours = Math.floor(mins / 60);
+  const remainingMins = mins % 60;
+  return `${hours}时${remainingMins}分`;
+}
+
 function resetAll() {
   scanResult.value = null;
   classificationPreview.value = [];
   transferResult.value = null;
   transferProgress.value = null;
+  thumbnails.value = [];
   errorMessage.value = "";
   activeTab.value = "config";
 }
@@ -289,7 +450,7 @@ function resetAll() {
 
           <div class="form-group">
             <label>分类模板</label>
-            <select v-model="selectedTemplate">
+            <select v-model="selectedTemplate" @change="validateTemplate">
               <option v-for="t in templates" :key="t.template" :value="t.template">
                 {{ t.name }} ({{ t.template }})
               </option>
@@ -299,13 +460,58 @@ function resetAll() {
 
           <div v-if="selectedTemplate === 'custom'" class="form-group">
             <label>自定义模板</label>
-            <input type="text" v-model="customTemplate" placeholder="{year}/{month}/{day}" />
+            <input type="text" v-model="customTemplate" @input="validateTemplate" placeholder="{year}/{month}/{day}" />
             <small>支持: {year}, {month}, {day}, {camera}, {make}</small>
+            <div v-if="customTemplateValidation" class="template-validation">
+              <div v-if="customTemplateValidation.valid" class="validation-success">
+                ✅ 示例: {{ customTemplateValidation.example }}
+              </div>
+              <div v-else class="validation-warning">
+                ⚠️ {{ customTemplateValidation.warnings.join(', ') }}
+              </div>
+            </div>
           </div>
 
           <div class="form-group">
             <label>无日期时使用</label>
             <input type="text" v-model="fallbackFolder" />
+          </div>
+        </section>
+
+        <section class="config-section">
+          <h3>✏️ 批量重命名</h3>
+          <label class="checkbox-label">
+            <input type="checkbox" v-model="renameEnabled" />
+            启用批量重命名
+          </label>
+          
+          <div v-if="renameEnabled" class="rename-options">
+            <div class="form-group">
+              <label>重命名模板</label>
+              <select v-model="selectedRenameTemplate">
+                <option v-for="t in renameTemplates" :key="t.template" :value="t.template">
+                  {{ t.name }}
+                </option>
+                <option value="custom">自定义...</option>
+              </select>
+            </div>
+
+            <div v-if="selectedRenameTemplate === 'custom'" class="form-group">
+              <label>自定义重命名模板</label>
+              <input type="text" v-model="customRenameTemplate" />
+              <small>支持: {original}, {date}, {datetime}, {counter}, {camera}</small>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group half">
+                <label>计数起始</label>
+                <input type="number" v-model="renameCounterStart" min="1" />
+              </div>
+              <div class="form-group half">
+                <label>计数位数</label>
+                <input type="number" v-model="renameCounterDigits" min="1" max="8" />
+              </div>
+            </div>
           </div>
         </section>
 
@@ -322,11 +528,30 @@ function resetAll() {
             {{ isScanning ? "扫描中..." : "🔍 扫描照片" }}
           </button>
 
-          <button @click="startTransfer" :disabled="!scanResult || !targetDir || isTransferring" class="btn btn-success btn-large">
-            {{ isTransferring ? "传输中..." : "🚀 开始传输" }}
+          <button 
+            v-if="!isTransferring" 
+            @click="startTransfer" 
+            :disabled="!scanResult || !targetDir || isTransferring" 
+            class="btn btn-success btn-large"
+          >
+            🚀 开始传输
+          </button>
+          
+          <button 
+            v-else 
+            @click="cancelTransfer" 
+            :disabled="!canCancel"
+            class="btn btn-danger btn-large"
+          >
+            ⏹️ 取消传输
           </button>
 
-          <button @click="resetAll" class="btn btn-outline">重置</button>
+          <div class="button-row">
+            <button @click="showHistory = true; loadHistory()" class="btn btn-outline flex-1">
+              📜 历史
+            </button>
+            <button @click="resetAll" class="btn btn-outline flex-1">重置</button>
+          </div>
         </div>
       </aside>
 
@@ -337,6 +562,7 @@ function resetAll() {
             预览 ({{ scanResult?.total_files || 0 }})
           </button>
           <button :class="{ active: activeTab === 'transfer' }" @click="activeTab = 'transfer'">传输</button>
+          <button :class="{ active: activeTab === 'history' }" @click="activeTab = 'history'; loadHistory()">历史</button>
         </div>
 
         <div v-show="activeTab === 'config'" class="tab-content">
@@ -375,6 +601,27 @@ function resetAll() {
             </div>
           </div>
 
+          <!-- 缩略图预览 -->
+          <div v-if="scanResult" class="thumbnail-section">
+            <div class="thumbnail-header">
+              <button 
+                @click="loadThumbnails" 
+                :disabled="loadingThumbnails"
+                class="btn btn-secondary btn-small"
+              >
+                {{ loadingThumbnails ? '加载中...' : '🖼️ 加载缩略图' }}
+              </button>
+              <span v-if="thumbnails.length > 0" class="thumbnail-count">
+                已加载 {{ thumbnails.length }} 张
+              </span>
+            </div>
+            <div v-if="thumbnails.length > 0" class="thumbnail-grid">
+              <div v-for="thumb in thumbnails" :key="thumb.file_path" class="thumbnail-item">
+                <img :src="'data:' + thumb.format + ';base64,' + thumb.data" :alt="thumb.file_path" />
+              </div>
+            </div>
+          </div>
+
           <div class="classification-list">
             <div v-for="group in classificationPreview" :key="group.folder" class="classification-group">
               <div class="group-header">
@@ -393,7 +640,11 @@ function resetAll() {
         <div v-show="activeTab === 'transfer'" class="tab-content">
           <div v-if="transferProgress" class="transfer-progress">
             <div class="progress-header">
-              <span>{{ transferProgress.status === 'completed' ? '传输完成' : '正在传输...' }}</span>
+              <span>{{ 
+                transferProgress.status === 'completed' ? '传输完成' : 
+                transferProgress.status === 'cancelled' ? '已取消' :
+                transferProgress.status === 'scanning' ? '扫描中...' : '正在传输...' 
+              }}</span>
               <span>{{ transferProgress.current }} / {{ transferProgress.total }}</span>
             </div>
             <div class="progress-bar">
@@ -404,10 +655,13 @@ function resetAll() {
               <p>已传输: {{ formatSize(transferProgress.bytes_transferred) }} / {{ formatSize(transferProgress.total_bytes) }}</p>
               <p v-if="skipDuplicates">跳过重复: {{ transferProgress.skipped_duplicates }} 个</p>
             </div>
+            <div v-if="canCancel" class="cancel-hint">
+              💡 点击左侧"取消传输"按钮可中断传输
+            </div>
           </div>
 
           <div v-if="transferResult" class="transfer-result">
-            <h3>传输完成</h3>
+            <h3>{{ transferResult.errors.includes('传输已取消') ? '传输已取消' : '传输完成' }}</h3>
             <div class="result-stats">
               <div class="result-stat success">
                 <span class="num">{{ transferResult.success_count }}</span>
@@ -423,7 +677,7 @@ function resetAll() {
               </div>
             </div>
 
-            <div v-if="transferResult.errors.length > 0" class="error-list">
+            <div v-if="transferResult.errors.length > 0 && !transferResult.errors.includes('传输已取消')" class="error-list">
               <h4>错误详情:</h4>
               <ul>
                 <li v-for="(err, idx) in transferResult.errors" :key="idx">{{ err }}</li>
@@ -434,6 +688,40 @@ function resetAll() {
           <div v-if="!transferProgress && !transferResult" class="transfer-waiting">
             <p>准备传输...</p>
             <p>请先扫描照片，然后点击"开始传输"</p>
+          </div>
+        </div>
+
+        <!-- 历史记录标签页 -->
+        <div v-show="activeTab === 'history'" class="tab-content">
+          <div class="history-header">
+            <h3>📜 传输历史</h3>
+            <button v-if="transferHistory.length > 0" @click="clearHistory" class="btn btn-outline btn-small">
+              清空历史
+            </button>
+          </div>
+
+          <div v-if="transferHistory.length === 0" class="empty-history">
+            <p>暂无传输记录</p>
+          </div>
+
+          <div v-else class="history-list">
+            <div v-for="record in transferHistory" :key="record.id" class="history-item">
+              <div class="history-item-header">
+                <span class="history-time">{{ record.timestamp }}</span>
+                <button @click="deleteHistoryRecord(record.id)" class="btn-icon" title="删除">×</button>
+              </div>
+              <div class="history-item-body">
+                <p><strong>源:</strong> {{ record.source_dir }}</p>
+                <p><strong>目标:</strong> {{ record.target_dir }}</p>
+                <div class="history-stats">
+                  <span class="history-stat success">✓ {{ record.success_count }}</span>
+                  <span class="history-stat skip">⊘ {{ record.skip_count }}</span>
+                  <span class="history-stat error">✗ {{ record.error_count }}</span>
+                  <span class="history-stat">📁 {{ formatSize(record.total_size) }}</span>
+                  <span class="history-stat">⏱️ {{ formatDuration(record.duration_secs) }}</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -960,6 +1248,212 @@ body {
 
 .transfer-waiting p:last-child {
   font-size: 13px;
+}
+
+/* 新增样式 */
+.btn-danger {
+  background: linear-gradient(135deg, #ff416c 0%, #ff4b2b 100%);
+  color: white;
+}
+
+.btn-small {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.button-row {
+  display: flex;
+  gap: 8px;
+}
+
+.flex-1 {
+  flex: 1;
+}
+
+.form-row {
+  display: flex;
+  gap: 10px;
+}
+
+.form-group.half {
+  flex: 1;
+}
+
+.rename-options {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed #ddd;
+}
+
+.template-validation {
+  margin-top: 5px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.validation-success {
+  background: #d4edda;
+  color: #155724;
+}
+
+.validation-warning {
+  background: #fff3cd;
+  color: #856404;
+}
+
+/* 缩略图样式 */
+.thumbnail-section {
+  margin-bottom: 15px;
+}
+
+.thumbnail-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.thumbnail-count {
+  font-size: 12px;
+  color: #666;
+}
+
+.thumbnail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 10px;
+  background: #f8f9fa;
+  border-radius: 8px;
+}
+
+.thumbnail-item {
+  aspect-ratio: 1;
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.thumbnail-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* 取消提示 */
+.cancel-hint {
+  margin-top: 15px;
+  padding: 10px;
+  background: #e7f3ff;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #0066cc;
+  text-align: center;
+}
+
+/* 历史记录样式 */
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.history-header h3 {
+  margin: 0;
+  font-size: 16px;
+  color: #333;
+}
+
+.empty-history {
+  text-align: center;
+  padding: 40px;
+  color: #888;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.history-item {
+  border: 1px solid #eee;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.history-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: #f8f9fa;
+  border-bottom: 1px solid #eee;
+}
+
+.history-time {
+  font-size: 12px;
+  color: #666;
+}
+
+.btn-icon {
+  background: none;
+  border: none;
+  font-size: 18px;
+  color: #999;
+  cursor: pointer;
+  padding: 0 5px;
+  line-height: 1;
+}
+
+.btn-icon:hover {
+  color: #dc3545;
+}
+
+.history-item-body {
+  padding: 12px;
+}
+
+.history-item-body p {
+  margin: 0 0 5px 0;
+  font-size: 12px;
+  color: #555;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.history-stat {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #f0f0f0;
+}
+
+.history-stat.success {
+  background: #d4edda;
+  color: #155724;
+}
+
+.history-stat.skip {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.history-stat.error {
+  background: #f8d7da;
+  color: #721c24;
 }
 
 /* 响应式调整 - 小窗口 */

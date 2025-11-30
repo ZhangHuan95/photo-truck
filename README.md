@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.0-blue.svg" alt="Version">
+  <img src="https://img.shields.io/badge/version-1.1.0-blue.svg" alt="Version">
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg" alt="Platform">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License">
   <img src="https://img.shields.io/badge/rust-1.70+-orange.svg" alt="Rust">
@@ -327,7 +327,7 @@ A: Photo Truck 使用两级哈希策略：
 <details>
 <summary><strong>Q: 传输过程中可以取消吗？</strong></summary>
 
-A: 目前版本暂不支持取消正在进行的传输。建议在传输前仔细确认扫描结果。
+A: 传输过程中可以点击"取消传输"按钮中断操作，已传输的文件会保留。
 </details>
 
 <details>
@@ -343,12 +343,42 @@ A: Photo Truck 执行的是**复制**操作，原始文件不会被删除。这�
 - [x] 多种分类模板
 - [x] 文件去重
 - [x] 进度显示
-- [ ] 传输取消功能
-- [ ] 自定义模板编辑器
-- [ ] 传输历史记录
-- [ ] 缩略图预览
-- [ ] 命令行模式
-- [ ] 批量重命名
+- [x] 传输取消功能
+- [x] 自定义模板编辑器
+- [x] 传输历史记录
+- [x] 缩略图预览
+- [x] 命令行模式
+- [x] 批量重命名
+
+## 🖥️ 命令行模式
+
+Photo Truck 支持命令行模式，可在无图形界面的环境下使用：
+
+```bash
+# 基本用法
+photo-truck -s /Volumes/SD/DCIM -t /Volumes/NAS/Photos
+
+# 使用自定义模板
+photo-truck -s ~/Pictures -t ~/Backup -p "{year}/{month}-{day}"
+
+# 预览模式（不传输）
+photo-truck -s ~/Pictures -t ~/Backup --dry-run
+
+# 查看帮助
+photo-truck --help
+```
+
+### 命令行选项
+
+| 选项 | 说明 |
+|------|------|
+| `-s, --source <路径>` | 源文件夹路径 |
+| `-t, --target <路径>` | 目标文件夹路径 |
+| `-p, --template <模板>` | 分类模板 |
+| `--no-skip-duplicates` | 不跳过重复文件 |
+| `-n, --dry-run` | 预览模式 |
+| `-h, --help` | 显示帮助 |
+| `-v, --version` | 显示版本 |
 
 ## 🤝 贡献
 
