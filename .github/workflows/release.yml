@@ -24,7 +24,6 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const core = require('@actions/core');
             const actor = context.actor;
             // 查询触发者在仓库中的权限
             const perm = await github.rest.repos.getCollaboratorPermissionLevel({
