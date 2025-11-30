@@ -25,6 +25,8 @@ jobs:
         with:
           script: |
             const actor = context.actor;
+            // 从 refs/tags/v1.0.0 提取 tag 名称
+            const tagName = context.ref.replace('refs/tags/', '');
             // 查询触发者在仓库中的权限
             const perm = await github.rest.repos.getCollaboratorPermissionLevel({
               owner: context.repo.owner,
@@ -35,7 +37,7 @@ jobs:
             const trusted = (p === 'admin' || p === 'write' || p === 'maintain');
             // 创建 draft release（一直创建为 draft）
             const releaseBody = [
-              '## Photo Truck ' + context.ref_name,
+              '## Photo Truck ' + tagName,
               '',
               '### 📥 下载',
               '',
@@ -56,8 +58,8 @@ jobs:
             const release = await github.rest.repos.createRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              tag_name: context.ref_name,
-              name: 'Photo Truck ' + context.ref_name,
+              tag_name: tagName,
+              name: 'Photo Truck ' + tagName,
               body: releaseBody,
               draft: true,
               prerelease: false
