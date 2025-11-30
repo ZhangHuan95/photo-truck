@@ -98,7 +98,7 @@ jobs:
           node-version: 20
           cache: 'npm'
       - name: Install Rust stable
-        uses: dtolnay/rust-action@stable
+        uses: dtolnay/rust-toolchain@stable
       - name: Add Rust target (macOS)
         if: matrix.platform == 'macos-latest'
         run: |
